@@ -170,10 +170,12 @@ const Courses = () => {
     setIsDialogOpen(true);
   };
 
-  const handleDialogClose = () => {
-    setIsDialogOpen(false);
-    setEditingCourse(null);
-    resetForm();
+  const handleDialogChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (!open) {
+      setEditingCourse(null);
+      resetForm();
+    }
   };
 
   if (!session || !user) {
@@ -191,7 +193,7 @@ const Courses = () => {
             <p className="text-muted-foreground">Administrer dine golfbaner</p>
           </div>
           
-          <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
+          <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="mr-2 h-4 w-4" />
@@ -274,7 +276,7 @@ const Courses = () => {
                   <Button type="submit" className="flex-1">
                     {editingCourse ? "Opdater" : "Opret"}
                   </Button>
-                  <Button type="button" variant="outline" onClick={handleDialogClose}>
+                  <Button type="button" variant="outline" onClick={() => handleDialogChange(false)}>
                     Annuller
                   </Button>
                 </div>
