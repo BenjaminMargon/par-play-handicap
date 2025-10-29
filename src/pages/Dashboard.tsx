@@ -6,6 +6,8 @@ import Navbar from "@/components/Navbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingDown, TrendingUp, Target, Calendar } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 
 interface ScoreWithCourse {
   id: string;
@@ -68,6 +70,22 @@ const Dashboard = () => {
     enabled: !!user,
   });
 
+  const { data: allScores } = useQuery({
+    queryKey: ["allScores", user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from("scores")
+        .select("date, simple_handicap, score_differential")
+        .eq("user_id", user.id)
+        .order("date", { ascending: true });
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
   const { data: stats } = useQuery({
     queryKey: ["stats", user?.id],
     queryFn: async () => {
@@ -99,6 +117,11 @@ const Dashboard = () => {
     },
     enabled: !!user,
   });
+
+  const chartData = allScores?.map((score) => ({
+    date: new Date(score.date).toLocaleDateString("da-DK", { day: "2-digit", month: "2-digit" }),
+    handicap: Math.round((score.simple_handicap || score.score_differential || 0) * 10) / 10,
+  })) || [];
 
   if (!session || !user) {
     return null;
@@ -175,6 +198,50 @@ const Dashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        {chartData.length > 0 && (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>Handicap Udvikling</CardTitle>
+              <CardDescription>Se hvordan dit handicap har udviklet sig over tid</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer
+                config={{
+                  handicap: {
+                    label: "Handicap",
+                    color: "hsl(var(--primary))",
+                  },
+                }}
+                className="h-[300px]"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis 
+                      dataKey="date" 
+                      className="text-xs"
+                      tick={{ fill: "hsl(var(--muted-foreground))" }}
+                    />
+                    <YAxis 
+                      className="text-xs"
+                      tick={{ fill: "hsl(var(--muted-foreground))" }}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Line 
+                      type="monotone" 
+                      dataKey="handicap" 
+                      stroke="hsl(var(--primary))" 
+                      strokeWidth={2}
+                      dot={{ fill: "hsl(var(--primary))", r: 4 }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
