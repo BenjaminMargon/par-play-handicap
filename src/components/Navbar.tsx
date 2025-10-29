@@ -2,7 +2,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Target, LogOut, LayoutDashboard, Trophy, Plus } from "lucide-react";
+import { Target, LogOut, LayoutDashboard, Trophy, Plus, List } from "lucide-react";
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -56,6 +56,15 @@ const Navbar = () => {
             >
               <Trophy className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">Baner</span>
+            </Button>
+            
+            <Button
+              variant={isActive("/live-scorecard") ? "default" : "ghost"}
+              size="sm"
+              onClick={() => navigate("/live-scorecard")}
+            >
+              <List className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Live Scorekort</span>
             </Button>
             
             <Button
