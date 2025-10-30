@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, PlayCircle } from "lucide-react";
+import { Save, Trash2 } from "lucide-react";
 
 interface Course {
   id: string;
@@ -118,6 +118,34 @@ const LiveScorecard = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["active_rounds"] });
+    },
+  });
+
+  const deleteRoundMutation = useMutation({
+    mutationFn: async (roundId: string) => {
+      const { error } = await supabase
+        .from("active_rounds")
+        .delete()
+        .eq("id", roundId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["active_rounds"] });
+      toast({
+        title: "Runde slettet",
+        description: "Det aktive scorekort er blevet slettet",
+      });
+      setSelectedCourse(null);
+      setSelectedCourseId("");
+      setHoleScores([]);
+      setActiveRoundId(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Fejl",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -242,17 +270,26 @@ const LiveScorecard = () => {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {activeRounds.map((round) => (
-                    <Button
-                      key={round.id}
-                      variant="outline"
-                      className="w-full justify-between"
-                      onClick={() => handleContinueRound(round)}
-                    >
-                      <span>{round.course_name}</span>
-                      <span className="text-muted-foreground text-sm">
-                        {(round.hole_scores as unknown as HoleScore[]).filter((h: HoleScore) => h.strokes !== null).length}/{round.course_holes} huller
-                      </span>
-                    </Button>
+                    <div key={round.id} className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1 justify-between"
+                        onClick={() => handleContinueRound(round)}
+                      >
+                        <span>{round.course_name}</span>
+                        <span className="text-muted-foreground text-sm">
+                          {(round.hole_scores as unknown as HoleScore[]).filter((h: HoleScore) => h.strokes !== null).length}/{round.course_holes} huller
+                        </span>
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        onClick={() => deleteRoundMutation.mutate(round.id)}
+                        disabled={deleteRoundMutation.isPending}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   ))}
                 </CardContent>
               </Card>
@@ -354,27 +391,46 @@ const LiveScorecard = () => {
               ))}
             </div>
 
-            <div className="flex justify-end gap-4">
+            <div className="flex justify-between">
               <Button 
-                variant="outline"
+                variant="destructive"
                 size="lg" 
                 onClick={() => {
-                  setSelectedCourse(null);
-                  setSelectedCourseId("");
-                  setHoleScores([]);
-                  setActiveRoundId(null);
+                  if (activeRoundId) {
+                    deleteRoundMutation.mutate(activeRoundId);
+                  } else {
+                    setSelectedCourse(null);
+                    setSelectedCourseId("");
+                    setHoleScores([]);
+                  }
                 }}
+                disabled={deleteRoundMutation.isPending}
               >
-                Pause Runde
+                <Trash2 className="mr-2 h-4 w-4" />
+                Slet Runde
               </Button>
-              <Button 
-                size="lg" 
-                onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending || holeScores.filter(h => h.strokes !== null).length < selectedCourse.holes}
-              >
-                <Save className="mr-2 h-4 w-4" />
-                {saveMutation.isPending ? "Gemmer..." : "Gem som Færdig Score"}
-              </Button>
+              <div className="flex gap-4">
+                <Button 
+                  variant="outline"
+                  size="lg" 
+                  onClick={() => {
+                    setSelectedCourse(null);
+                    setSelectedCourseId("");
+                    setHoleScores([]);
+                    setActiveRoundId(null);
+                  }}
+                >
+                  Pause Runde
+                </Button>
+                <Button 
+                  size="lg" 
+                  onClick={() => saveMutation.mutate()}
+                  disabled={saveMutation.isPending || holeScores.filter(h => h.strokes !== null).length < selectedCourse.holes}
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {saveMutation.isPending ? "Gemmer..." : "Gem som Færdig Score"}
+                </Button>
+              </div>
             </div>
           </>
         )}
