@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      active_rounds: {
+        Row: {
+          course_holes: number
+          course_id: string
+          course_name: string
+          course_par: number
+          hole_scores: Json
+          id: string
+          started_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          course_holes: number
+          course_id: string
+          course_name: string
+          course_par: number
+          hole_scores?: Json
+          id?: string
+          started_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          course_holes?: number
+          course_id?: string
+          course_name?: string
+          course_par?: number
+          hole_scores?: Json
+          id?: string
+          started_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       courses: {
         Row: {
           course_rating: number | null

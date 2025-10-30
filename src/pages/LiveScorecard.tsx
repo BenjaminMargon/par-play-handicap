@@ -9,8 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Save, Target } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Save, PlayCircle } from "lucide-react";
 
 interface Course {
   id: string;
@@ -30,11 +30,13 @@ interface HoleScore {
 const LiveScorecard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [holeScores, setHoleScores] = useState<HoleScore[]>([]);
+  const [activeRoundId, setActiveRoundId] = useState<string | null>(null);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -71,6 +73,54 @@ const LiveScorecard = () => {
     enabled: !!user,
   });
 
+  const { data: activeRounds } = useQuery({
+    queryKey: ["active_rounds", user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from("active_rounds")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("started_at", { ascending: false });
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
+  const saveActiveMutation = useMutation({
+    mutationFn: async (scores: HoleScore[]) => {
+      if (!selectedCourse || !user) throw new Error("Missing data");
+
+      if (activeRoundId) {
+        const { error } = await supabase
+          .from("active_rounds")
+          .update({ hole_scores: scores as any })
+          .eq("id", activeRoundId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from("active_rounds")
+          .insert([{
+            user_id: user.id,
+            course_id: selectedCourse.id,
+            course_name: selectedCourse.name,
+            course_holes: selectedCourse.holes,
+            course_par: selectedCourse.par,
+            hole_scores: scores as any,
+          }])
+          .select()
+          .single();
+        if (error) throw error;
+        if (data) setActiveRoundId(data.id);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["active_rounds"] });
+    },
+  });
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!selectedCourse || !user) throw new Error("Missing data");
@@ -104,8 +154,14 @@ const LiveScorecard = () => {
 
       const { error } = await supabase.from("scores").insert([scoreData]);
       if (error) throw error;
+
+      // Delete active round after saving
+      if (activeRoundId) {
+        await supabase.from("active_rounds").delete().eq("id", activeRoundId);
+      }
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["active_rounds"] });
       toast({
         title: "Score gemt!",
         description: "Din runde er blevet gemt",
@@ -136,13 +192,26 @@ const LiveScorecard = () => {
     }
   };
 
+  const handleContinueRound = (round: any) => {
+    const course = courses?.find(c => c.id === round.course_id);
+    if (course) {
+      setSelectedCourse(course);
+      setSelectedCourseId(round.course_id);
+      setActiveRoundId(round.id);
+      setHoleScores(round.hole_scores as unknown as HoleScore[]);
+    }
+  };
+
   const handleStrokeChange = (holeIndex: number, value: string) => {
     const strokes = value === "" ? null : parseInt(value);
-    setHoleScores(prev => {
-      const updated = [...prev];
-      updated[holeIndex] = { ...updated[holeIndex], strokes };
-      return updated;
-    });
+    const updated = [...holeScores];
+    updated[holeIndex] = { ...updated[holeIndex], strokes };
+    setHoleScores(updated);
+    
+    // Auto-save after a short delay
+    setTimeout(() => {
+      saveActiveMutation.mutate(updated);
+    }, 1000);
   };
 
   const totalStrokes = holeScores.reduce((sum, h) => sum + (h.strokes || 0), 0);
@@ -164,31 +233,57 @@ const LiveScorecard = () => {
         </div>
 
         {!selectedCourse ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Vælg Bane</CardTitle>
-              <CardDescription>Vælg den bane du spiller på</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="course">Bane</Label>
-                  <Select value={selectedCourseId} onValueChange={handleCourseSelect}>
-                    <SelectTrigger id="course">
-                      <SelectValue placeholder="Vælg en bane" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {courses?.map((course) => (
-                        <SelectItem key={course.id} value={course.id}>
-                          {course.name} ({course.holes} huller, Par {course.par})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+          <>
+            {activeRounds && activeRounds.length > 0 && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>Fortsæt Runde</CardTitle>
+                  <CardDescription>Du har igangværende runder</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {activeRounds.map((round) => (
+                    <Button
+                      key={round.id}
+                      variant="outline"
+                      className="w-full justify-between"
+                      onClick={() => handleContinueRound(round)}
+                    >
+                      <span>{round.course_name}</span>
+                      <span className="text-muted-foreground text-sm">
+                        {(round.hole_scores as unknown as HoleScore[]).filter((h: HoleScore) => h.strokes !== null).length}/{round.course_holes} huller
+                      </span>
+                    </Button>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Start Ny Runde</CardTitle>
+                <CardDescription>Vælg den bane du spiller på</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="course">Bane</Label>
+                    <Select value={selectedCourseId} onValueChange={handleCourseSelect}>
+                      <SelectTrigger id="course">
+                        <SelectValue placeholder="Vælg en bane" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {courses?.map((course) => (
+                          <SelectItem key={course.id} value={course.id}>
+                            {course.name} ({course.holes} huller, Par {course.par})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </>
         ) : (
           <>
             <Card className="mb-6">
@@ -259,14 +354,26 @@ const LiveScorecard = () => {
               ))}
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-4">
+              <Button 
+                variant="outline"
+                size="lg" 
+                onClick={() => {
+                  setSelectedCourse(null);
+                  setSelectedCourseId("");
+                  setHoleScores([]);
+                  setActiveRoundId(null);
+                }}
+              >
+                Pause Runde
+              </Button>
               <Button 
                 size="lg" 
                 onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending}
+                disabled={saveMutation.isPending || holeScores.filter(h => h.strokes !== null).length < selectedCourse.holes}
               >
                 <Save className="mr-2 h-4 w-4" />
-                {saveMutation.isPending ? "Gemmer..." : "Gem Runde"}
+                {saveMutation.isPending ? "Gemmer..." : "Gem som Færdig Score"}
               </Button>
             </div>
           </>
