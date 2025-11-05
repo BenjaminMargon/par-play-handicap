@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
 import Navbar from "@/components/Navbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingDown, TrendingUp, Target, Calendar } from "lucide-react";
+import { TrendingDown, TrendingUp, Calendar } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
@@ -92,26 +92,41 @@ const Dashboard = () => {
       if (!user) return null;
       const { data, error } = await supabase
         .from("scores")
-        .select("simple_handicap, score_differential")
+        .select(`
+          simple_handicap, 
+          score_differential,
+          score,
+          courses!inner(par)
+        `)
         .eq("user_id", user.id)
-        .not("simple_handicap", "is", null);
+        .order("date", { ascending: false });
 
       if (error) throw error;
 
       if (!data || data.length === 0) return null;
 
-      const handicaps = data
+      // Calculate average handicap from last 20 sessions
+      const last20 = data.slice(0, 20);
+      const handicaps = last20
         .map(s => s.simple_handicap || s.score_differential)
         .filter(h => h !== null) as number[];
 
-      const avgHandicap = handicaps.reduce((a, b) => a + b, 0) / handicaps.length;
-      const bestHandicap = Math.min(...handicaps);
-      const latestHandicap = handicaps[0];
+      const avgHandicap = handicaps.length > 0 
+        ? handicaps.reduce((a, b) => a + b, 0) / handicaps.length 
+        : 0;
+
+      // Calculate best session (score relative to par)
+      const sessionsRelativeToPar = data
+        .map(s => s.score - (s.courses as any).par)
+        .filter(diff => !isNaN(diff));
+
+      const bestSession = sessionsRelativeToPar.length > 0 
+        ? Math.min(...sessionsRelativeToPar) 
+        : 0;
 
       return {
         avgHandicap: Math.round(avgHandicap * 10) / 10,
-        bestHandicap: Math.round(bestHandicap * 10) / 10,
-        latestHandicap: Math.round(latestHandicap * 10) / 10,
+        bestSession,
         totalRounds: data.length,
       };
     },
@@ -137,25 +152,10 @@ const Dashboard = () => {
           <p className="text-muted-foreground">Velkommen tilbage! Her er dit overblik</p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
+        <div className="grid gap-6 md:grid-cols-3 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Aktuelt Handicap</CardTitle>
-              <Target className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {stats?.latestHandicap ?? "—"}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Baseret på seneste runde
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Gennemsnit</CardTitle>
+              <CardTitle className="text-sm font-medium">Gennemsnit Handicap</CardTitle>
               <TrendingDown className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -163,22 +163,26 @@ const Dashboard = () => {
                 {stats?.avgHandicap ?? "—"}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Gennemsnitligt handicap
+                Seneste 20 runder
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Bedste</CardTitle>
+              <CardTitle className="text-sm font-medium">Bedste Session</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {stats?.bestHandicap ?? "—"}
+                {stats?.bestSession !== undefined 
+                  ? stats.bestSession > 0 
+                    ? `+${stats.bestSession}` 
+                    : stats.bestSession 
+                  : "—"}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Dit laveste handicap
+                Over/under par
               </p>
             </CardContent>
           </Card>
